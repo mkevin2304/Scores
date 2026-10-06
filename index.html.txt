@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Scores Worldwide</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+    header { background: #1e293b; padding: 1rem 1.5rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
+    h1 { font-size: 1.5rem; }
+    .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .tab { background: #334155; border: none; color: white; padding: 0.5rem 1rem; border-radius: 9999px; cursor: pointer; }
+    .tab.active { background: #3b82f6; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    .league { margin-bottom: 2rem; }
+    .league h2 { font-size: 1.25rem; margin-bottom: 0.75rem; color: #94a3b8; }
+    .match { background: #1e293b; border-radius: 0.75rem; padding: 1rem; margin-bottom: 0.75rem; display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; }
+    .team { display: flex; align-items: center; gap: 0.75rem; }
+    .team.home { justify-content: flex-end; text-align: right; }
+    .logo { width: 32px; height: 32px; object-fit: contain; }
+    .score { font-size: 1.5rem; font-weight: 700; min-width: 80px; text-align: center; }
+    .status { font-size: 0.85rem; color: #94a3b8; text-align: center; grid-column: 1 / -1; }
+    .live { color: #ef4444; font-weight: 600; }
+    .loading, .error { text-align: center; padding: 3rem; color: #94a3b8; }
+    footer { text-align: center; padding: 2rem; color: #64748b; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🌍 Live Scores</h1>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-sport="soccer">Soccer</button>
+      <button class="tab" data-sport="basketball">Basketball</button>
+      <button class="tab" data-sport="football">American Football</button>
+      <button class="tab" data-sport="baseball">Baseball</button>
+      <button class="tab" data-sport="hockey">Hockey</button>
+    </div>
+  </header>
+
+  <main id="content">
+    <div class="loading">Loading live scores...</div>
+  </main>
+
+  <footer>
+    Data from ESPN public feeds · Updates every 60 seconds · Not affiliated with any league
+  </footer>
+
+  <script>
+    const SPORTS = {
+      soccer: [
+        { name: "Premier League", path: "soccer/eng.1" },
+        { name: "La Liga", path: "soccer/esp.1" },
+        { name: "Serie A", path: "soccer/ita.1" },
+        { name: "Bundesliga", path: "soccer/ger.1" },
+        { name: "Champions League", path: "soccer/uefa.champions" },
+        { name: "All Soccer", path: "soccer/all" }
+      ],
+      basketball: [
+        { name: "NBA", path: "basketball/nba" },
+        { name: "NCAA Men's", path: "basketball/mens-college-basketball" }
+      ],
+      football: [
+        { name: "NFL", path: "football/nfl" },
+        { name: "College Football", path: "football/college-football" }
+      ],
+      baseball: [
+        { name: "MLB", path: "baseball/mlb" }
+      ],
+      hockey: [
+        { name: "NHL", path: "hockey/nhl" }
+      ]
+    };
+
+    let currentSport = "soccer";
+    let refreshInterval;
+
+    async function fetchScoreboard(path) {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    }
+
+    function renderMatch(event) {
+      const comp = event.competitions[0];
+      const home = comp.competitors.find(c => c.homeAway === "home");
+      const away = comp.competitors.find(c => c.homeAway === "away");
+      const status = comp.status.type;
+      const isLive = status.state === "in";
+      const isFinal = status.completed;
+
+      return `
+        <div class="match">
+          <div class="team away">
+            ${away.team.logo ? `<img class="logo" src="${away.team.logo}" alt="">` : ""}
+            <span>${away.team.shortDisplayName || away.team.displayName}</span>
+          </div>
+          <div class="score">
+            ${away.score || "-"} – ${home.score || "-"}
+          </div>
+          <div class="team home">
+            <span>${home.team.shortDisplayName || home.team.displayName}</span>
+            ${home.team.logo ? `<img class="logo" src="${home.team.logo}" alt="">` : ""}
+          </div>
+          <div class="status ${isLive ? "live" : ""}">
+            ${isLive ? "● LIVE · " : ""}${status.detail || status.description}
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadScores() {
+      const content = document.getElementById("content");
+      content.innerHTML = `<div class="loading">Loading ${currentSport} scores...</div>`;
+
+      try {
+        const leagues = SPORTS[currentSport];
+        let html = "";
+
+        for (const league of leagues) {
+          const data = await fetchScoreboard(league.path);
+          const events = data.events || [];
+
+          if (events.length === 0) continue;
+
+          html += `<div class="league"><h2>${league.name}</h2>`;
+          events.forEach(e => { html += renderMatch(e); });
+          html += `</div>`;
+        }
+
+        content.innerHTML = html || `<div class="loading">No games scheduled right now.</div>`;
+      } catch (err) {
+        content.innerHTML = `<div class="error">Failed to load scores. Try again later.</div>`;
+        console.error(err);
+      }
+    }
+
+    // Tab switching
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      if (e.target.classList.contains("tab")) {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        e.target.classList.add("active");
+        currentSport = e.target.dataset.sport;
+        loadScores();
+      }
+    });
+
+    // Initial load + auto-refresh
+    loadScores();
+    refreshInterval = setInterval(loadScores, 60000);
+  </script>
+</body>
+</html>
